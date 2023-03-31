@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Configuration;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -25,13 +26,16 @@ namespace ClientApp
     public partial class MainWindow : Window
     {
         IPEndPoint serverEndPoint;
-        UdpClient client = new UdpClient();
-        ObservableCollection<MessageInfo> messages = new ObservableCollection<MessageInfo>();   
-        //const string serverAddress = "127.0.0.1";
-        ///const short serverPort = 4040;
+        NetworkStream ns = null;
+        StreamReader sr = null;
+        StreamWriter sw = null;
+        TcpClient tcpClient;
+        ObservableCollection<MessageInfo> messages = new ObservableCollection<MessageInfo>();          
+
         public MainWindow()
         {
             InitializeComponent();
+            tcpClient = new TcpClient();    
             this.DataContext = messages;
             string serverAddress = ConfigurationManager.AppSettings["ServerAddress"]!;
             short serverPort = short.Parse( ConfigurationManager.AppSettings["ServerPort"]!);
@@ -41,36 +45,50 @@ namespace ClientApp
         {
             while (true)
             {
-                var res = await client.ReceiveAsync();
-                string message = Encoding.Unicode.GetString(res.Buffer);
+                string? message= await sr.ReadLineAsync();
                 messages.Add(new MessageInfo(message));
             }
            
         }
         private void SentBtnClick(object sender, RoutedEventArgs e)
         {        
-            SendMessage(msgTextBox.Text);
+            string message = msgTextBox.Text;
+            sw.WriteLine(message);
+            sw.Flush();
         }
 
-        private void JoinBtnClick(object sender, RoutedEventArgs e)
+        private void ConnectBtnClick(object sender, RoutedEventArgs e)
         {
-            string message = "$<join>";
-            SendMessage(message);
-            Listen();
+            try
+            {
+                tcpClient.Connect(serverEndPoint);
+                ns = tcpClient.GetStream();
+                sr = new StreamReader(ns);
+                sw = new StreamWriter(ns);
+                Listen();
+            }
+            catch (Exception ex)
+            {
+
+                MessageBox.Show(ex.Message);
+            }
+         
         }
-        private async void SendMessage(string message)
+
+
+        private void DisconnectBtnClick(object sender, RoutedEventArgs e)
         {
-            byte[] data = Encoding.Unicode.GetBytes(message);
-            await client.SendAsync(data, data.Length, serverEndPoint);
+            ns.Close();
+            tcpClient.Close();
         }
     }
     class MessageInfo
     {
         public string Message { get; set; }
         public DateTime Time { get; set; }
-        public MessageInfo(string msg)
+        public MessageInfo(string? msg)
         {
-            Message = msg;
+            Message = msg ??"";
             Time = DateTime.Now;
         }
         public override string ToString()
